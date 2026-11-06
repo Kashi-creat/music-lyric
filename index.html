@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Video musical</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%B5%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--a:#9b7bff;--b:#6ff0ff;--c:#ff7ac8;--ink:#f1efff}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#02010a;color:var(--ink);overflow:hidden;
+    font-family:"Trebuchet MS",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+  .card{background:linear-gradient(160deg,rgba(28,18,60,.9),rgba(8,8,26,.92));border:1px solid rgba(155,123,255,.35);border-radius:22px;
+    padding:28px 24px 22px;text-align:center;box-shadow:0 0 60px rgba(111,240,255,.12),0 20px 60px rgba(0,0,0,.6);width:min(360px,calc(100vw - 32px));
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  button{font:inherit;cursor:pointer;border:0;border-radius:999px;padding:11px 26px;font-weight:700;color:#14082c;
+    background:linear-gradient(90deg,var(--b),var(--a),var(--c));box-shadow:0 0 22px rgba(155,123,255,.4);transition:transform .15s,opacity .5s}
+  button:active{transform:scale(.95)}
+  button.ghost{background:rgba(255,255,255,.05);color:var(--ink);border:1px solid rgba(241,239,255,.28);box-shadow:none}
+
+  #intro{position:fixed;inset:0;display:grid;place-items:center;z-index:5;transition:opacity 1.6s,filter 1.6s,transform 2s}
+  #intro.out{opacity:0;filter:blur(8px);transform:scale(1.1);pointer-events:none}
+  #intro .disc{width:92px;height:92px;margin:0 auto 14px;border-radius:50%;
+    background:radial-gradient(circle,#0c0820 0 14%,#c9b8ff 15% 17%,#1a1238 18% 40%,#2a1d55 41% 60%,#120c2a 61%);
+    box-shadow:0 0 30px rgba(155,123,255,.5);animation:spin 6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #intro h1{font-size:26px;margin-bottom:6px;background:linear-gradient(90deg,var(--b),var(--a),var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
+  #intro p{opacity:.7;font-size:14px;margin-bottom:20px}
+  #loading{font-size:13px;opacity:.6;margin-top:12px}
+
+  /* controles */
+  #bar{position:fixed;left:0;right:0;bottom:0;z-index:3;padding:10px 16px calc(12px + env(safe-area-inset-bottom));
+    display:flex;align-items:center;gap:12px;opacity:0;transition:opacity .6s;background:linear-gradient(transparent,rgba(2,1,10,.7))}
+  #bar.on{opacity:1}
+  body.idle #bar{opacity:0}
+  #pp{width:42px;height:42px;padding:0;font-size:16px;flex:none}
+  #seek{flex:1;accent-color:var(--a);height:20px}
+  #time{font-size:12px;opacity:.7;font-variant-numeric:tabular-nums;min-width:78px;text-align:right}
+  #songTitle{position:fixed;top:calc(16px + env(safe-area-inset-top));left:0;right:0;text-align:center;z-index:3;pointer-events:none;
+    font-size:12px;letter-spacing:4px;text-transform:uppercase;opacity:0;transition:opacity 1.2s}
+  #songTitle.on{opacity:.55}
+  body.idle #songTitle{opacity:0}
+
+  /* modo editar / sincronizar */
+  #editor{position:fixed;inset:0;z-index:8;display:none;place-items:center;background:rgba(2,1,10,.75)}
+  #editor.on{display:grid}
+  #editor .card{width:min(560px,calc(100vw - 24px));text-align:left;max-height:calc(100vh - 24px);overflow:auto}
+  #editor h2{font-size:18px;margin-bottom:8px;color:var(--b)}
+  #editor p{font-size:13.5px;opacity:.8;line-height:1.5;margin-bottom:10px}
+  #editor textarea{width:100%;height:min(44vh,360px);background:rgba(0,0,0,.35);color:var(--ink);border:1px solid rgba(155,123,255,.35);
+    border-radius:12px;padding:10px;font:14px/1.5 ui-monospace,Menlo,Consolas,monospace;resize:vertical;user-select:text;-webkit-user-select:text}
+  #editor .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  #editor .row button{padding:10px 18px;font-size:14px}
+  #syncHud{position:fixed;left:0;right:0;bottom:calc(80px + env(safe-area-inset-bottom));z-index:7;display:none;justify-content:center;pointer-events:none}
+  #syncHud.on{display:flex}
+  #syncHud .card{pointer-events:auto;padding:16px 18px;text-align:center}
+  #syncHud .lbl{font-size:11px;letter-spacing:3px;text-transform:uppercase;opacity:.6;margin-bottom:6px}
+  #syncNext{font-size:17px;margin-bottom:12px;min-height:1.4em}
+  #syncHud .row{display:flex;gap:8px;justify-content:center}
+  #syncHud button{padding:9px 16px;font-size:13px}
+  #tapZone{position:fixed;inset:0;z-index:6;display:none}
+  #tapZone.on{display:block}
+  #flash{position:fixed;inset:0;z-index:6;pointer-events:none;background:rgba(155,123,255,.18);opacity:0;transition:opacity .25s}
+  #flash.on{opacity:1;transition:none}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="intro">
+  <div class="card">
+    <div class="disc"></div>
+    <h1 id="iTitle"></h1>
+    <p id="iSub"></p>
+    <button id="play">▶ Reproducir</button>
+    <div id="loading"></div>
+  </div>
+</div>
+
+<div id="songTitle"></div>
+<div id="bar"><button id="pp" class="ghost">⏸</button><input id="seek" type="range" min="0" max="1000" value="0"><span id="time">0:00 / 0:00</span></div>
+
+<div id="editor"><div class="card">
+  <h2>✏️ Modo editar letra</h2>
+  <p>1. Pegá la letra abajo, <b>una frase por renglón</b>. Si un renglón está entre paréntesis, se va a ver de otro color (coros).<br>
+     2. Tocá <b>Sincronizar</b>: arranca la canción y vos tocás la pantalla (o la barra espaciadora) <b>justo cuando empieza cada frase</b>.<br>
+     3. Al final se descarga <b>letra.lrc</b>: subilo junto al index.html y la canción, y listo.</p>
+  <textarea id="lyricsIn" placeholder="Pegá acá la letra, una frase por renglón…"></textarea>
+  <div class="row">
+    <button id="syncBtn">Sincronizar ▶</button>
+    <button id="loadLrc" class="ghost">Cargar un .lrc</button>
+    <button id="closeEd" class="ghost">Cerrar</button>
+    <input id="lrcFile" type="file" accept=".lrc,.txt" hidden>
+  </div>
+  <div id="outBox" style="display:none">
+    <p style="margin-top:14px">✅ ¡Listo! Esta es la letra con los tiempos. Ya quedó guardada en este navegador para probarla, y se descargó <b>letra.lrc</b>.</p>
+    <textarea id="lrcOut" readonly style="height:160px"></textarea>
+    <div class="row"><button id="dlBtn">Descargar letra.lrc otra vez</button><button id="tryBtn" class="ghost">Ver cómo queda ▶</button></div>
+  </div>
+</div></div>
+<div id="tapZone"></div>
+<div id="flash"></div>
+<div id="syncHud"><div class="card">
+  <div class="lbl">Tocá cuando empiece esta frase</div>
+  <div id="syncNext"></div>
+  <div class="row"><button id="undoBtn" class="ghost">↶ Deshacer</button><button id="finishBtn" class="ghost">Terminar</button></div>
+</div></div>
+
+<script>
+/* =========================================================
+   ✏️  EDITÁ ACÁ  ✏️
+   ========================================================= */
+const CONFIG = {
+  titulo: "Te Estoy Correteando",
+  subtitulo: "ponete los auriculares 🎧",
+  cancion: "cancion.mp3",      // el archivo de la canción (en la misma carpeta)
+  letra: "letra.lrc",          // el archivo con la letra y los tiempos (lo genera el modo editar)
+  // colores de la letra
+  colores: [[.45, .95, 1], [.65, .5, 1], [1, .55, .85], [1, .9, .6]],
+  colorCoros: [.85, .55, 1]
+};
+/* ========================================================= */
+
+const $ = id => document.getElementById(id);
+const qp = new URLSearchParams(location.search);
+$("iTitle").textContent = CONFIG.titulo; $("iSub").textContent = CONFIG.subtitulo; document.title = CONFIG.titulo;
+$("songTitle").textContent = CONFIG.titulo;
+const TAU = Math.PI * 2, rnd = Math.random;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v, lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, t) => { t = clamp((t - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) * .87;
+const fmt = t => isFinite(t) ? Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0") : "0:00";
+
+/* =========================================================
+   Letra: LRC
+   ========================================================= */
+let LYR = [];   // [{t, text, coro}]
+function parseLRC(txt) {
+  const out = [];
+  for (const raw of txt.split(/\r?\n/)) {
+    const m = raw.match(/^\s*\[(\d+):(\d+(?:\.\d+)?)\](.*)$/); if (!m) continue;
+    const text = m[3].trim(); if (!text) continue;
+    out.push({ t: +m[1] * 60 + +m[2], text: text.replace(/^\((.*)\)$/, "$1"), coro: /^\(.*\)$/.test(text) });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+function toLRC(list) {
+  return list.map(l => { const m = Math.floor(l.t / 60), s = (l.t % 60).toFixed(2).padStart(5, "0"); return `[${String(m).padStart(2, "0")}:${s}]${l.raw}`; }).join("\n");
+}
+function demoLyrics() {
+  const lines = ["Esta es una letra de ejemplo", "Abrí la página con ?editar", "pegá la letra de tu canción", "y sincronizala tocando la pantalla", "(cada frase en su momento)", "✨"];
+  return lines.map((text, i) => ({ t: 3 + i * 4.5, text: text.replace(/^\((.*)\)$/, "$1"), coro: /^\(.*\)$/.test(text) }));
+}
+async function loadLyrics() {
+  try { const ls = localStorage.getItem("letraLRC"); if (ls && !qp.has("archivo")) { const l = parseLRC(ls); if (l.length) return l; } } catch (e) {}
+  try { const r = await fetch(CONFIG.letra, { cache: "no-store" }); if (r.ok) { const l = parseLRC(await r.text()); if (l.length) return l; } } catch (e) {}
+  return demoLyrics();
+}
+
+/* =========================================================
+   Audio + análisis
+   ========================================================= */
+const audio = new Audio(); audio.src = CONFIG.cancion; audio.preload = "auto"; audio.crossOrigin = "anonymous";
+let actx = null, analyser = null, freq = null, wave = null;
+function setupAudio() {
+  if (actx) return;
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = actx.createMediaElementSource(audio);
+    analyser = actx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = .78;
+    src.connect(analyser); analyser.connect(actx.destination);
+    freq = new Uint8Array(analyser.frequencyBinCount);
+  } catch (e) { analyser = null; }
+}
+// niveles suavizados
+const LV = { bass: 0, mid: 0, high: 0, energy: 0, beat: 0, beatT: -9, avg: .2 };
+function analyse(dt, time) {
+  let bass = 0, mid = 0, high = 0;
+  if (analyser && !audio.paused) {
+    analyser.getByteFrequencyData(freq);
+    const n = freq.length;   // 512 bins de ~43 Hz
+    for (let i = 1; i < 7; i++) bass += freq[i]; bass /= 6 * 255;
+    for (let i = 7; i < 60; i++) mid += freq[i]; mid /= 53 * 255;
+    for (let i = 60; i < 220; i++) high += freq[i]; high /= 160 * 255;
+  } else if (!audio.paused) {        // sin análisis (navegador viejo): pulso suave
+    bass = .4 + .3 * Math.max(0, Math.sin(time * 6.3)); mid = .35; high = .25;
+  }
+  const k = 1 - Math.exp(-dt * 14);
+  LV.bass += (bass - LV.bass) * k; LV.mid += (mid - LV.mid) * k; LV.high += (high - LV.high) * k;
+  LV.energy = LV.bass * .5 + LV.mid * .35 + LV.high * .15;
+  LV.avg += (bass - LV.avg) * (1 - Math.exp(-dt * 1.2));
+  if (bass > LV.avg * 1.18 + .04 && bass > .3 && time - LV.beatT > .28) { LV.beatT = time; LV.beat = 1; onBeat(bass); }
+  LV.beat *= Math.exp(-dt * 6);
+}
+
+/* =========================================================
+   WebGL
+   ========================================================= */
+const glc = $("gl");
+const gl = glc.getContext("webgl", { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: "high-performance" });
+let W, H, DPR, PORT, dprCap = qp.get("calidad") === "baja" ? 1 : 2, quality = 0, drawFrac = 1;
+const FOV = 55 * Math.PI / 180;
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, dprCap); W = Math.max(1, innerWidth); H = Math.max(1, innerHeight); PORT = H > W;
+  glc.width = Math.round(W * DPR); glc.height = Math.round(H * DPR); gl.viewport(0, 0, glc.width, glc.height);
+  layoutDirty = true;
+}
+let layoutDirty = true;
+addEventListener("resize", resize); resize();
+function shader(t, s) { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const info = { p, a: {}, u: {} };
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_ATTRIBUTES); i++) { const n = gl.getActiveAttrib(p, i).name; info.a[n] = gl.getAttribLocation(p, n); }
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; info.u[n] = gl.getUniformLocation(p, n); }
+  return info;
+}
+function buffer(d, dyn) { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, d, dyn ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW); return b; }
+function upd(b, d) { gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferSubData(gl.ARRAY_BUFFER, 0, d); }
+function attr(pr, n, b, s) { const l = pr.a[n]; if (l === undefined || l < 0) return; gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, s, gl.FLOAT, false, 0, 0); }
+function off(pr) { for (const k in pr.a) if (pr.a[k] >= 0) gl.disableVertexAttribArray(pr.a[k]); }
+const VIEW = new Float32Array(16), PROJ = new Float32Array(16);
+function perspective(o, f, a, n, fa) { const q = 1 / Math.tan(f / 2), nf = 1 / (n - fa); o.fill(0); o[0] = q / a; o[5] = q; o[10] = (fa + n) * nf; o[11] = -1; o[14] = 2 * fa * n * nf; }
+function lookAt(o, e, c) {
+  let zx = e[0] - c[0], zy = e[1] - c[1], zz = e[2] - c[2], l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;
+  let xx = zz, xz = -zx; l = Math.hypot(xx, xz) || 1; xx /= l; xz /= l; const xy = 0;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  o[0] = xx; o[1] = yx; o[2] = zx; o[3] = 0; o[4] = xy; o[5] = yy; o[6] = zy; o[7] = 0; o[8] = xz; o[9] = yz; o[10] = zz; o[11] = 0;
+  o[12] = -(xx * e[0] + xy * e[1] + xz * e[2]); o[13] = -(yx * e[0] + yy * e[1] + yz * e[2]); o[14] = -(zx * e[0] + zy * e[1] + zz * e[2]); o[15] = 1;
+}
+
+const FS_POINT = `precision mediump float; varying vec3 vC; varying float vA;
+void main(){ vec2 c = gl_PointCoord - .5; float d = length(c); if (d > .5) discard;
+  float a = pow(1. - d * 2., 1.7) + .5 * pow(1. - d * 2., 6.); gl_FragColor = vec4(vC * a * vA, 1.); }`;
+const POINTS = program(`attribute vec3 aPos; attribute vec3 aCol; attribute vec2 aSA;
+uniform mat4 uV, uP; uniform float uS, uMax; varying vec3 vC; varying float vA;
+void main(){ vec4 mv = uV * vec4(aPos, 1.); gl_Position = uP * mv; gl_PointSize = clamp(uS * aSA.x / -mv.z, .8, uMax);
+  vC = aCol; vA = aSA.y * smoothstep(1., 8., -mv.z); }`, FS_POINT);
+
+// fondo: nebulosa espacial que reacciona a la música
+const SKY = program(`attribute vec2 aC; varying vec2 vP; void main(){ vP = aC; gl_Position = vec4(aC, 0., 1.); }`,
+`precision highp float; varying vec2 vP; uniform float uT, uBass, uMid, uHigh, uBeat, uAsp, uYaw, uHue;
+float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p){ float v = 0., a = .5; for (int i = 0; i < 5; i++){ v += a * n(p); p = p * 2.03 + 1.3; a *= .5; } return v; }
+vec3 pal(float t){ return .5 + .5 * cos(6.2831 * (vec3(.0, .15, .3) + t)); }
+void main(){
+  vec2 p = vec2(vP.x * uAsp, vP.y) * 1.1 + vec2(uYaw * .4, 0.);
+  float t = uT * .03;
+  float q = fbm(p * 1.3 + vec2(t, -t * .7));
+  float r = fbm(p * 2.1 + q * 1.8 + vec2(-t * .5, t) + uBass * .25);
+  float neb = smoothstep(.35, 1., r) * (.55 + .9 * uMid);
+  vec3 c1 = pal(.62 + uHue + q * .25) * vec3(.5, .35, 1.), c2 = pal(.85 + uHue + r * .2) * vec3(1., .45, .9);
+  vec3 col = mix(c1, c2, smoothstep(.3, .8, q)) * neb * .55;
+  col += vec3(.25, .4, 1.) * pow(fbm(p * 4. - t * 2.), 3.) * .25 * (1. + uHigh * 2.);
+  float vig = 1. - smoothstep(.5, 1.6, length(vP * vec2(uAsp * .8, 1.)));
+  col *= .55 + .45 * vig;
+  col += vec3(.6, .4, 1.) * uBeat * .08 * vig;
+  col += vec3(.012, .008, .03);
+  gl_FragColor = vec4(col, 1.);
+}`);
+// brillos / anillos
+const QUAD = program(`attribute vec2 aC; uniform mat4 uV, uP; uniform vec3 uCen, uAX, uAY; varying vec2 vU;
+void main(){ vU = aC; gl_Position = uP * uV * vec4(uCen + uAX * aC.x + uAY * aC.y, 1.); }`,
+`precision mediump float; varying vec2 vU; uniform float uMode, uA; uniform vec3 uCol;
+void main(){ float d = length(vU);
+  if (uMode < .5) { float a = pow(max(0., 1. - d), 2.6); gl_FragColor = vec4(uCol * a * uA, 1.); }
+  else { float a = exp(-pow((d - .92) / .035, 2.)); if (d > 1.) discard; gl_FragColor = vec4(uCol * a * uA, 1.); } }`);
+const quadBuf = buffer(new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]));
+
+/* ---------- estrellas que vuelan hacia la cámara ---------- */
+const NSTAR = 3000, stPos = new Float32Array(NSTAR * 3), stCol = new Float32Array(NSTAR * 3), stSA = new Float32Array(NSTAR * 2);
+for (let i = 0; i < NSTAR; i++) {
+  stPos.set([(rnd() - .5) * 700, (rnd() - .5) * 700, -rnd() * 900], i * 3);
+  const w = rnd(); stCol.set(w < .2 ? [1, .85, .75] : w < .45 ? [.7, .8, 1] : [1, 1, 1], i * 3); stSA.set([.8 + rnd() * 1.6, .7], i * 2);
+}
+const bStPos = buffer(stPos, true), bStCol = buffer(stCol), bStSA = buffer(stSA, true);
+
+/* ---------- partículas de la letra ---------- */
+const BIG = innerWidth * innerHeight * Math.min(devicePixelRatio || 1, 2) ** 2 > 1600000;
+const NP = BIG ? 16000 : 11000;
+const pPos = new Float32Array(NP * 3), pVel = new Float32Array(NP * 3), pTgt = new Float32Array(NP * 3), pCol = new Float32Array(NP * 3),
+      pSA = new Float32Array(NP * 2), pCurCol = new Float32Array(NP * 3), pTgtCol = new Float32Array(NP * 3), pSz = new Float32Array(NP), pPh = new Float32Array(NP);
+const pUsed = new Uint8Array(NP);
+for (let i = 0; i < NP; i++) {
+  const a = rnd() * TAU, r = 30 + rnd() * 90;
+  pPos.set([Math.cos(a) * r, gauss() * 30, Math.sin(a) * r - 40], i * 3);
+  pSz[i] = .8 + rnd() * 1.2; pPh[i] = rnd() * TAU; pCurCol.set([.6, .5, 1], i * 3);
+}
+const bPPos = buffer(pPos, true), bPCol = buffer(pCurCol, true), bPSA = buffer(pSA, true);
+
+// estado "sin letra": nube orbitando
+function idleTargets() {
+  for (let i = 0; i < NP; i++) {
+    const a = (i / NP) * TAU * 7 + rnd() * .2, r = 35 + (i % 7) * 7 + gauss() * 3;
+    pTgt.set([Math.cos(a) * r, gauss() * 4 + Math.sin(a * 3) * 4, Math.sin(a) * r - 30], i * 3);
+    pTgtCol.set(i % 3 ? [.55, .45, 1] : [.4, .85, 1], i * 3); pUsed[i] = 0;
+  }
+  orbiting = true;
+}
+let orbiting = true;
+idleTargets();
+
+// texto → puntos
+const tc = document.createElement("canvas"), tx = tc.getContext("2d", { willReadFrequently: true });
+function textPoints(str) {
+  const cw = PORT ? 900 : 1600, chMax = PORT ? 900 : 640;
+  tc.width = cw; tc.height = chMax; tx.clearRect(0, 0, cw, chMax);
+  tx.fillStyle = "#fff"; tx.textAlign = "center"; tx.textBaseline = "middle";
+  const maxW = cw * .9;
+  let size = PORT ? 110 : 120, lines;
+  const wrap = s => { tx.font = `800 ${size}px "Trebuchet MS", Arial, sans-serif`; const w = s.split(" "), out = []; let l = "";
+    for (const x of w) { const t = l ? l + " " + x : x; if (tx.measureText(t).width > maxW && l) { out.push(l); l = x; } else l = t; } if (l) out.push(l); return out; };
+  for (;;) { lines = wrap(str); if ((lines.length <= (PORT ? 4 : 2) && lines.every(l => tx.measureText(l).width <= maxW)) || size < 40) break; size -= 6; }
+  const lh = size * 1.12, top = chMax / 2 - (lines.length - 1) * lh / 2;
+  lines.forEach((l, i) => tx.fillText(l, cw / 2, top + i * lh));
+  const d = tx.getImageData(0, 0, cw, chMax).data, pts = [];
+  const step = 3;
+  for (let y = 0; y < chMax; y += step) for (let x = 0; x < cw; x += step) if (d[(y * cw + x) * 4 + 3] > 130) pts.push([x - cw / 2, -(y - chMax / 2)]);
+  return { pts, cw };
+}
+let curLine = -2, lineHue = 0;
+function showLine(idx) {
+  curLine = idx;
+  if (idx < 0) { idleTargets(); return; }
+  const L = LYR[idx]; orbiting = false;
+  const { pts, cw } = textPoints(L.text);
+  // ancho del texto en el mundo según la pantalla
+  const dist = 90, half = Math.tan(FOV / 2) * dist, worldW = 2 * half * (W / H) * (PORT ? .92 : .8), sc = worldW / cw;
+  const base = L.coro ? CONFIG.colorCoros : CONFIG.colores[idx % CONFIG.colores.length];
+  const alt = CONFIG.colores[(idx + 1) % CONFIG.colores.length];
+  const use = Math.min(NP, Math.max(pts.length * 1.6, NP * .55)) | 0;
+  for (let i = 0; i < NP; i++) {
+    if (i < use && pts.length) {
+      const p = pts[(rnd() * pts.length) | 0];
+      pTgt.set([p[0] * sc + gauss() * .08, p[1] * sc + gauss() * .08, gauss() * 1.2], i * 3);
+      const m = clamp((p[0] / cw + .5), 0, 1);
+      pTgtCol.set([lerp(base[0], alt[0], m * .45), lerp(base[1], alt[1], m * .45), lerp(base[2], alt[2], m * .45)], i * 3); pUsed[i] = 1;
+      // empujón: salen despedidas antes de acomodarse
+      pVel[i * 3] += gauss() * 30; pVel[i * 3 + 1] += gauss() * 30; pVel[i * 3 + 2] += gauss() * 30 + 10;
+    } else {
+      const a = rnd() * TAU, r = worldW * .62 + rnd() * 50;
+      pTgt.set([Math.cos(a) * r, Math.sin(a) * r * .55, -40 - rnd() * 80], i * 3);
+      pTgtCol.set([.35, .3, .8], i * 3); pUsed[i] = 0;
+    }
+  }
+  ringT = performance.now() / 1000;
+}
+
+/* ---------- beats ---------- */
+let ringT = -9, rings = [];
+function onBeat(power) {
+  rings.push({ t: performance.now() / 1000, p: power });
+  if (rings.length > 6) rings.shift();
+  for (let i = 0; i < NP; i += 3) { pVel[i * 3] += gauss() * 6 * power; pVel[i * 3 + 1] += gauss() * 6 * power; pVel[i * 3 + 2] += (rnd() * 8) * power; }
+}
+
+/* =========================================================
+   Cámara + render
+   ========================================================= */
+let camA = 0, camY = 0, last = performance.now(), perfSum = 0, perfN = 0, started = false;
+const ptrs = new Map(); let dragA = 0, dragY = 0, moved = 0;
+glc.addEventListener("pointerdown", e => { ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = 0; poke(); });
+glc.addEventListener("pointermove", e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
+  dragA = clamp(dragA + dx * .004, -.9, .9); dragY = clamp(dragY - dy * .15, -30, 30); });
+glc.addEventListener("pointerup", e => ptrs.delete(e.pointerId));
+glc.addEventListener("pointercancel", e => ptrs.delete(e.pointerId));
+
+function drawPts(pos, col, sa, n, size, max) {
+  gl.useProgram(POINTS.p); gl.uniformMatrix4fv(POINTS.u.uV, false, VIEW); gl.uniformMatrix4fv(POINTS.u.uP, false, PROJ);
+  gl.uniform1f(POINTS.u.uS, size); gl.uniform1f(POINTS.u.uMax, max || 30 * DPR);
+  attr(POINTS, "aPos", pos, 3); attr(POINTS, "aCol", col, 3); attr(POINTS, "aSA", sa, 2); gl.drawArrays(gl.POINTS, 0, n); off(POINTS);
+}
+function quad(c, ax, ay, mode, col, a) {
+  gl.uniform3fv(QUAD.u.uCen, c); gl.uniform3fv(QUAD.u.uAX, ax); gl.uniform3fv(QUAD.u.uAY, ay);
+  gl.uniform1f(QUAD.u.uMode, mode); gl.uniform3fv(QUAD.u.uCol, col); gl.uniform1f(QUAD.u.uA, a); gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+function frame(now) {
+  const rdt = Math.min(.5, (now - last) / 1000), dt = Math.min(.05, rdt); last = now;
+  const time = now / 1000;
+  if (started && !document.hidden && rdt > 0 && rdt < .5) {
+    perfSum += rdt; perfN++;
+    if (perfN >= 90) { const fps = perfN / perfSum; perfSum = perfN = 0; if (fps < 40 && quality < 2) { quality++; dprCap = quality === 1 ? 1.5 : 1; resize(); } }
+  }
+  analyse(dt, time);
+
+  // ¿qué frase va ahora?
+  if (started && !syncing) {
+    const t = audio.currentTime;
+    let idx = -1; for (let i = 0; i < LYR.length; i++) if (LYR[i].t <= t + .05) idx = i; else break;
+    if (idx >= 0) { const next = LYR[idx + 1]; const dur = next ? next.t - LYR[idx].t : 9; if (t - LYR[idx].t > Math.min(dur, 9)) idx = -1; }
+    if (idx !== curLine || layoutDirty) { layoutDirty = false; showLine(idx); }
+  }
+
+  // cámara: órbita suave + respiración con la música
+  camA += dt * .05;
+  const ang = Math.sin(camA) * .42 + dragA, rad = (PORT ? 100 : 92) - LV.beat * 4;
+  const eye = [Math.sin(ang) * rad, Math.sin(camA * .7) * 8 + dragY, Math.cos(ang) * rad];
+  if (!ptrs.size) { dragA *= .985; dragY *= .985; }
+  perspective(PROJ, FOV, W / H, .5, 3000); lookAt(VIEW, eye, [0, 0, 0]);
+  const RX = [VIEW[0], VIEW[4], VIEW[8]], UY = [VIEW[1], VIEW[5], VIEW[9]];
+  const sc = (v, s) => [v[0] * s, v[1] * s, v[2] * s];
+
+  // fondo
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  gl.useProgram(SKY.p);
+  gl.uniform1f(SKY.u.uT, time); gl.uniform1f(SKY.u.uBass, LV.bass); gl.uniform1f(SKY.u.uMid, LV.mid); gl.uniform1f(SKY.u.uHigh, LV.high);
+  gl.uniform1f(SKY.u.uBeat, LV.beat); gl.uniform1f(SKY.u.uAsp, W / H); gl.uniform1f(SKY.u.uYaw, ang);
+  lineHue += ((curLine >= 0 ? (curLine % 4) * .07 : 0) - lineHue) * dt * .8; gl.uniform1f(SKY.u.uHue, lineHue);
+  attr(SKY, "aC", quadBuf, 2); gl.drawArrays(gl.TRIANGLES, 0, 6); off(SKY);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+
+  // estrellas: más rápido cuanto más energía
+  const sp = (12 + LV.energy * 260 + LV.beat * 120) * dt;
+  for (let i = 0; i < NSTAR; i++) {
+    const j = i * 3; stPos[j + 2] += sp;
+    if (stPos[j + 2] > 140) { stPos[j] = (rnd() - .5) * 700; stPos[j + 1] = (rnd() - .5) * 700; stPos[j + 2] = -900; }
+    stSA[i * 2 + 1] = .55 + LV.high * .8;
+  }
+  upd(bStPos, stPos); upd(bStSA, stSA); drawPts(bStPos, bStCol, bStSA, NSTAR, 260 * DPR, 6 * DPR);
+
+  // brillo central + anillos en cada golpe
+  gl.useProgram(QUAD.p); gl.uniformMatrix4fv(QUAD.u.uV, false, VIEW); gl.uniformMatrix4fv(QUAD.u.uP, false, PROJ); attr(QUAD, "aC", quadBuf, 2);
+  quad([0, 0, -10], sc(RX, 70 + LV.bass * 30), sc(UY, 70 + LV.bass * 30), 0, [.35, .25, .8], .25 + LV.bass * .35);
+  for (const r of rings) { const k = time - r.t; if (k > 1.4) continue; const s = 20 + k * 120; quad([0, 0, -15], sc(RX, s), sc(UY, s), 1, [.6, .5, 1], (1 - k / 1.4) * .5 * r.p); }
+  off(QUAD);
+
+  // partículas de la letra (resortes)
+  const kS = orbiting ? 2.2 : 9, damp = Math.exp(-dt * (orbiting ? 2.5 : 5.5));
+  const pulse = 1 + LV.bass * .35 + LV.beat * .25;
+  const rot = orbiting ? dt * .25 : 0, cr = Math.cos(rot), sr = Math.sin(rot);
+  for (let i = 0; i < NP; i++) {
+    const j = i * 3;
+    if (orbiting) { const x = pTgt[j], z = pTgt[j + 2] + 30; pTgt[j] = x * cr - z * sr; pTgt[j + 2] = x * sr + z * cr - 30; }
+    const wob = pUsed[i] ? Math.sin(time * 2 + pPh[i]) * .15 * (1 + LV.high * 3) : 0;
+    pVel[j] += (pTgt[j] - pPos[j]) * kS * dt; pVel[j + 1] += (pTgt[j + 1] + wob - pPos[j + 1]) * kS * dt; pVel[j + 2] += (pTgt[j + 2] - pPos[j + 2]) * kS * dt;
+    pVel[j] *= damp; pVel[j + 1] *= damp; pVel[j + 2] *= damp;
+    pPos[j] += pVel[j] * dt; pPos[j + 1] += pVel[j + 1] * dt; pPos[j + 2] += pVel[j + 2] * dt;
+    const ck = 1 - Math.exp(-dt * 3);
+    pCurCol[j] += (pTgtCol[j] - pCurCol[j]) * ck; pCurCol[j + 1] += (pTgtCol[j + 1] - pCurCol[j + 1]) * ck; pCurCol[j + 2] += (pTgtCol[j + 2] - pCurCol[j + 2]) * ck;
+    pSA[i * 2] = pSz[i] * (pUsed[i] ? pulse : .9);
+    pSA[i * 2 + 1] = pUsed[i] ? .62 + .2 * Math.sin(time * 3 + pPh[i]) + LV.beat * .25 : .3 + LV.mid * .45;
+  }
+  upd(bPPos, pPos); upd(bPCol, pCurCol); upd(bPSA, pSA);
+  drawPts(bPPos, bPCol, bPSA, NP, 140 * DPR, 14 * DPR);
+
+  // barra
+  if (started && !seeking) { $("seek").value = audio.duration ? audio.currentTime / audio.duration * 1000 : 0; $("time").textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`; }
+  requestAnimationFrame(frame);
+}
+
+/* =========================================================
+   Controles
+   ========================================================= */
+let seeking = false, idleTimer = 0;
+function poke() { document.body.classList.remove("idle"); clearTimeout(idleTimer); idleTimer = setTimeout(() => { if (!audio.paused && !syncing) document.body.classList.add("idle"); }, 3500); }
+addEventListener("pointermove", poke);
+$("pp").onclick = () => { if (audio.paused) { actx && actx.resume(); audio.play(); } else audio.pause(); };
+audio.addEventListener("play", () => { $("pp").textContent = "⏸"; poke(); });
+audio.addEventListener("pause", () => { $("pp").textContent = "▶"; document.body.classList.remove("idle"); });
+audio.addEventListener("ended", () => { $("pp").textContent = "↺"; document.body.classList.remove("idle"); });
+$("seek").addEventListener("input", () => { seeking = true; if (audio.duration) $("time").textContent = `${fmt($("seek").value / 1000 * audio.duration)} / ${fmt(audio.duration)}`; });
+$("seek").addEventListener("change", () => { if (audio.duration) audio.currentTime = $("seek").value / 1000 * audio.duration; seeking = false; });
+addEventListener("keydown", e => { if (e.code === "Space" && !syncing && started && document.activeElement.tagName !== "TEXTAREA") { e.preventDefault(); $("pp").click(); } });
+
+$("play").onclick = async () => {
+  setupAudio(); actx && actx.resume();
+  try { await audio.play(); } catch (e) { $("loading").textContent = "No se pudo reproducir la canción 😕 Revisá que el archivo se llame " + CONFIG.cancion; return; }
+  $("intro").classList.add("out"); started = true;
+  $("bar").classList.add("on"); $("songTitle").classList.add("on"); poke();
+};
+
+/* =========================================================
+   Modo editar / sincronizar (abrir la página con ?editar)
+   ========================================================= */
+let syncing = false, syncLines = [], syncIdx = 0, syncTimes = [];
+if (qp.has("editar")) {
+  $("editor").classList.add("on");
+  try { const ls = localStorage.getItem("letraLRC"); if (ls) $("lyricsIn").value = ls.split(/\r?\n/).map(l => l.replace(/^\s*\[\d+:\d+(?:\.\d+)?\]/, "")).join("\n"); } catch (e) {}
+}
+$("closeEd").onclick = () => $("editor").classList.remove("on");
+$("loadLrc").onclick = () => $("lrcFile").click();
+$("lrcFile").onchange = async e => { const f = e.target.files[0]; if (!f) return; const txt = await f.text(); const l = parseLRC(txt);
+  if (l.length) { try { localStorage.setItem("letraLRC", txt); } catch (er) {} LYR = l; $("lyricsIn").value = txt.split(/\r?\n/).map(s => s.replace(/^\s*\[\d+:\d+(?:\.\d+)?\]/, "")).join("\n"); curLine = -2; alert("Letra cargada ✔"); } };
+$("syncBtn").onclick = async () => {
+  syncLines = $("lyricsIn").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (!syncLines.length) { $("lyricsIn").focus(); return; }
+  syncIdx = 0; syncTimes = []; syncing = true;
+  $("editor").classList.remove("on"); $("outBox").style.display = "none";
+  setupAudio(); actx && actx.resume(); audio.currentTime = 0;
+  try { await audio.play(); } catch (e) {}
+  $("intro").classList.add("out"); started = true; $("bar").classList.add("on");
+  $("tapZone").classList.add("on"); $("syncHud").classList.add("on"); updHud(); idleTargets(); curLine = -2;
+};
+function updHud() { $("syncNext").textContent = syncLines[syncIdx] !== undefined ? syncLines[syncIdx] : "¡Listo! Tocá Terminar"; }
+function mark() {
+  if (!syncing || syncIdx >= syncLines.length) return;
+  syncTimes.push(audio.currentTime);
+  // mostrar la frase al instante, para ver si quedó bien
+  LYR = syncLines.slice(0, syncTimes.length).map((raw, i) => ({ t: syncTimes[i], text: raw.replace(/^\((.*)\)$/, "$1"), coro: /^\(.*\)$/.test(raw) }));
+  showLine(syncTimes.length - 1);
+  syncIdx++; updHud();
+  $("flash").classList.add("on"); requestAnimationFrame(() => requestAnimationFrame(() => $("flash").classList.remove("on")));
+  if (syncIdx >= syncLines.length) setTimeout(finishSync, 1500);
+}
+$("tapZone").addEventListener("pointerdown", e => { e.preventDefault(); mark(); });
+addEventListener("keydown", e => { if (syncing && (e.code === "Space" || e.code === "Enter")) { e.preventDefault(); mark(); } });
+$("undoBtn").onclick = () => { if (!syncTimes.length) return; syncTimes.pop(); syncIdx--; audio.currentTime = Math.max(0, (syncTimes[syncTimes.length - 1] || 0) + .2); updHud(); };
+$("finishBtn").onclick = () => finishSync();
+audio.addEventListener("ended", () => { if (syncing) finishSync(); });
+function finishSync() {
+  if (!syncing) return;
+  syncing = false; $("tapZone").classList.remove("on"); $("syncHud").classList.remove("on");
+  const list = syncTimes.map((t, i) => ({ t, raw: syncLines[i] }));
+  const lrc = toLRC(list);
+  try { localStorage.setItem("letraLRC", lrc); } catch (e) {}
+  LYR = parseLRC(lrc); curLine = -2;
+  $("lrcOut").value = lrc; $("outBox").style.display = ""; $("editor").classList.add("on"); audio.pause();
+  download(lrc);
+}
+function download(txt) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" })); a.download = "letra.lrc"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+$("dlBtn").onclick = () => download($("lrcOut").value);
+$("tryBtn").onclick = () => { $("editor").classList.remove("on"); audio.currentTime = 0; actx && actx.resume(); audio.play(); poke(); };
+
+/* ---------- arranque ---------- */
+loadLyrics().then(l => { LYR = l; });
+audio.addEventListener("canplaythrough", () => $("loading").textContent = "", { once: true });
+$("loading").textContent = "cargando canción…";
+audio.addEventListener("error", () => $("loading").textContent = "No encuentro " + CONFIG.cancion + " 😕");
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
