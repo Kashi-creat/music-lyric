@@ -149,9 +149,37 @@ function parseLRC(txt) {
 function toLRC(list) {
   return list.map(l => { const m = Math.floor(l.t / 60), s = (l.t % 60).toFixed(2).padStart(5, "0"); return `[${String(m).padStart(2, "0")}:${s}]${l.raw}`; }).join("\n");
 }
+const EMBEDDED_LRC = `[00:52.00]Te estoy correteando, ya sal de mi mente, que te quiero ver
+[01:00.50]Ya van varios días enfermo de ti, dale, ven, cúrame
+[01:08.80]Cuéntame, ¿qué ha sido de ti?
+[01:13.20]Extráñame, te extraño a ti
+[01:18.50]Uh-uh-uh
+[01:21.00]Ah-ah-ah
+[01:23.50]Uh-uh-uh-uh
+[01:29.00]Te estoy correteando, ya sal de mi mente, que te quiero ver
+[01:37.50]Ya van varios días enfermo de ti, dale, ven, cúrame
+[01:45.80]Cuéntame, ¿qué ha sido de ti?
+[01:50.20]Extráñame, te extraño a ti
+[01:56.00]No sabes, no sabes verme
+[02:01.50]No puedo si tú no estás cerca de mí
+[02:07.00]Me va a matar estar sin ti
+[02:14.00]Uh-uh-uh-uh
+[02:17.00]Uh-uh-uh-uh-uh
+[02:20.00]Uh-uh-uh-uh
+[02:23.00]Uh-uh-uh-uh
+[02:26.00]Uh-uh-uh-uh
+[02:29.00]Uh-uh-uh-uh
+[02:35.00]Te estoy correteando, ya sal de mi mente, que te quiero ver
+[02:43.50]Ya van varios días enfermo de ti, dale, ven, cúrame
+[02:51.80]Cuéntame, ¿qué ha sido de ti?
+[02:56.20]Extráñame, te extraño a ti
+[03:02.00](Todo se va, ya no pregunta por mí, eh)
+[03:07.00](Todo se va, ella se va, ya no pregunta por mí)
+[03:11.50](No estás acá, no estás aquí)
+[03:15.00](Te quiero acá, voy a morir, escúchame)`;
+
 function demoLyrics() {
-  const lines = ["Esta es una letra de ejemplo", "Abrí la página con ?editar", "pegá la letra de tu canción", "y sincronizala tocando la pantalla", "(cada frase en su momento)", "✨"];
-  return lines.map((text, i) => ({ t: 3 + i * 4.5, text: text.replace(/^\((.*)\)$/, "$1"), coro: /^\(.*\)$/.test(text) }));
+  return parseLRC(EMBEDDED_LRC);
 }
 async function loadLyrics() {
   try { const ls = localStorage.getItem("letraLRC"); if (ls && !qp.has("archivo")) { const l = parseLRC(ls); if (l.length) return l; } } catch (e) {}
