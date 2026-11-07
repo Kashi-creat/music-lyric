@@ -91,6 +91,7 @@
   <div class="row">
     <button id="syncBtn">Sincronizar ▶</button>
     <button id="loadLrc" class="ghost">Cargar un .lrc</button>
+    <button id="saveLs" class="ghost">Descargar letra guardada</button>
     <button id="closeEd" class="ghost">Cerrar</button>
     <input id="lrcFile" type="file" accept=".lrc,.txt" hidden>
   </div>
@@ -400,7 +401,7 @@ function drawPlanet(time, RX, UY) {
   const R = PL_R * 1.35;
   const ra = [PL_R * 2.4, PL_R * .35, PL_R * .5], rb = [PL_R * -.3, PL_R * .25, PL_R * 2.3];
   const bx = [RX[0] * R, RX[1] * R, RX[2] * R], by = [UY[0] * R, UY[1] * R, UY[2] * R];
-  gl.uniform3fv(PLANET.u.uCen, PORT ? [-95, 118, -400] : PL_POS);
+  gl.uniform3fv(PLANET.u.uCen, PORT ? [-55, 125, -420] : PL_POS);
   // 1) parte de atrás del anillo  2) planeta opaco  3) atmósfera  4) parte de adelante del anillo
   gl.uniform1f(PLANET.u.uMode, 2); gl.uniform1f(PLANET.u.uHalf, -1); gl.uniform3fv(PLANET.u.uAX, ra); gl.uniform3fv(PLANET.u.uAY, rb); gl.drawArrays(gl.TRIANGLES, 0, 6);
   gl.blendFunc(gl.ONE, gl.ZERO);
@@ -485,8 +486,8 @@ function frame(now) {
 
   // cámara: órbita suave + respiración con la música
   camA += dt * .05;
-  const ang = Math.sin(camA) * .42 + dragA, rad = (PORT ? 100 : 92) - LV.beat * 4 - LV.rms * 14 * instMix + (1 - instMix) * 0;
-  const eye = [Math.sin(ang) * rad, Math.sin(camA * .7) * 8 + dragY, Math.cos(ang) * rad];
+  const ang = Math.sin(camA) * (.05 + .33 * instMix) + dragA, rad = (PORT ? 104 : 92) - LV.beat * (1 + 3 * instMix) - LV.rms * 14 * instMix;
+  const eye = [Math.sin(ang) * rad, Math.sin(camA * .7) * (1.5 + 6.5 * instMix) + dragY, Math.cos(ang) * rad];
   if (!ptrs.size) { dragA *= .985; dragY *= .985; }
   perspective(PROJ, FOV, W / H, .5, 3000); lookAt(VIEW, eye, [0, 0, 0]);
   const RX = [VIEW[0], VIEW[4], VIEW[8]], UY = [VIEW[1], VIEW[5], VIEW[9]];
@@ -525,8 +526,9 @@ function frame(now) {
   spin += dt * (.12 + LV.energy * .9 + LV.beat * .6);
   const tiltX = .55 + Math.sin(time * .4) * .2 + (LV.mel - .5) * .5 * instMix, tiltZ = Math.sin(time * .27 + LV.mel * 2) * .25 * instMix;
   const cX = Math.cos(tiltX), sX = Math.sin(tiltX), cZ = Math.cos(tiltZ), sZ = Math.sin(tiltZ);
-  const RB = [lerp(52, PORT ? 14 : 22, instMix), lerp(66, PORT ? 24 : 36, instMix), lerp(82, PORT ? 34 : 52, instMix)];
-  const AMP = [lerp(10, 15, instMix), lerp(9, 13, instMix), lerp(8, 11, instMix)];
+  const halfW = Math.tan(FOV / 2) * 100 * (W / H), fit = Math.min(1, halfW * .8 / (52 + 11));
+  const RB = [lerp(52, 22 * fit, instMix), lerp(66, 36 * fit, instMix), lerp(82, 52 * fit, instMix)];
+  const AMP = [lerp(10, 15 * fit, instMix), lerp(9, 13 * fit, instMix), lerp(8, 11 * fit, instMix)];
   const ZB = lerp(-75, -6, instMix);
   const BAND = [[1, 14], [14, 90], [90, 300]];
   const hue = LV.mel;
@@ -598,6 +600,9 @@ if (qp.has("editar")) {
   try { const ls = localStorage.getItem("letraLRC"); if (ls) $("lyricsIn").value = ls.split(/\r?\n/).map(l => l.replace(/^\s*\[\d+:\d+(?:\.\d+)?\]/, "")).join("\n"); } catch (e) {}
 }
 $("closeEd").onclick = () => $("editor").classList.remove("on");
+// descarga la letra con tiempos que quedó guardada en este navegador
+$("saveLs").onclick = () => { let ls = null; try { ls = localStorage.getItem("letraLRC"); } catch (e) {}
+  if (ls && parseLRC(ls).length) download(ls); else alert("No hay ninguna letra sincronizada guardada en este navegador 😕"); };
 $("loadLrc").onclick = () => $("lrcFile").click();
 $("lrcFile").onchange = async e => { const f = e.target.files[0]; if (!f) return; const txt = await f.text(); const l = parseLRC(txt);
   if (l.length) { try { localStorage.setItem("letraLRC", txt); } catch (er) {} LYR = l; $("lyricsIn").value = txt.split(/\r?\n/).map(s => s.replace(/^\s*\[\d+:\d+(?:\.\d+)?\]/, "")).join("\n"); curLine = -2; alert("Letra cargada ✔"); } };
