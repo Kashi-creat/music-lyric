@@ -171,11 +171,12 @@ function setupAudio() {
     const src = actx.createMediaElementSource(audio);
     analyser = actx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = .78;
     src.connect(analyser); analyser.connect(actx.destination);
-    freq = new Uint8Array(analyser.frequencyBinCount);
+    freq = new Uint8Array(analyser.frequencyBinCount); wave = new Uint8Array(analyser.fftSize);
   } catch (e) { analyser = null; }
 }
 // niveles suavizados
-const LV = { bass: 0, mid: 0, high: 0, energy: 0, beat: 0, beatT: -9, avg: .2 };
+const LV = { bass: 0, mid: 0, high: 0, energy: 0, beat: 0, beatT: -9, avg: .2, rms: 0, mel: .4, highAvg: .1, hitT: -9 };
+const SPEC = new Float32Array(512), WAVE = new Float32Array(1024);
 function analyse(dt, time) {
   let bass = 0, mid = 0, high = 0;
   if (analyser && !audio.paused) {
@@ -184,6 +185,13 @@ function analyse(dt, time) {
     for (let i = 1; i < 7; i++) bass += freq[i]; bass /= 6 * 255;
     for (let i = 7; i < 60; i++) mid += freq[i]; mid /= 53 * 255;
     for (let i = 60; i < 220; i++) high += freq[i]; high /= 160 * 255;
+    for (let i = 0; i < n; i++) SPEC[i] += (Math.pow(freq[i] / 255, 1.5) - SPEC[i]) * .5;
+    analyser.getByteTimeDomainData(wave);
+    let r = 0; for (let i = 0; i < wave.length; i++) { const v = (wave[i] - 128) / 128; WAVE[i] = v; r += v * v; }
+    LV.rms += (Math.sqrt(r / wave.length) - LV.rms) * .2;
+    // "melodía": centro de gravedad del espectro entre ~200 Hz y ~5 kHz (0 = grave, 1 = agudo)
+    let sw = 0, sm = 0; for (let i = 5; i < 120; i++) { sw += freq[i]; sm += freq[i] * i; }
+    if (sw > 0) LV.mel += ((sm / sw - 5) / 115 * 1.8 - LV.mel) * .06;
   } else if (!audio.paused) {        // sin análisis (navegador viejo): pulso suave
     bass = .4 + .3 * Math.max(0, Math.sin(time * 6.3)); mid = .35; high = .25;
   }
@@ -192,6 +200,8 @@ function analyse(dt, time) {
   LV.energy = LV.bass * .5 + LV.mid * .35 + LV.high * .15;
   LV.avg += (bass - LV.avg) * (1 - Math.exp(-dt * 1.2));
   if (bass > LV.avg * 1.18 + .04 && bass > .3 && time - LV.beatT > .28) { LV.beatT = time; LV.beat = 1; onBeat(bass); }
+  LV.highAvg += (high - LV.highAvg) * (1 - Math.exp(-dt * 1.5));
+  if (high > LV.highAvg * 1.35 + .03 && high > .18 && time - LV.hitT > 1.4) { LV.hitT = time; shootingStar(); }
   LV.beat *= Math.exp(-dt * 6);
 }
 
@@ -284,7 +294,8 @@ const BIG = innerWidth * innerHeight * Math.min(devicePixelRatio || 1, 2) ** 2 >
 const NP = BIG ? 16000 : 11000;
 const pPos = new Float32Array(NP * 3), pVel = new Float32Array(NP * 3), pTgt = new Float32Array(NP * 3), pCol = new Float32Array(NP * 3),
       pSA = new Float32Array(NP * 2), pCurCol = new Float32Array(NP * 3), pTgtCol = new Float32Array(NP * 3), pSz = new Float32Array(NP), pPh = new Float32Array(NP);
-const pUsed = new Uint8Array(NP);
+const pUsed = new Uint8Array(NP), pRing = new Uint8Array(NP), pAng = new Float32Array(NP), pY0 = new Float32Array(NP);
+for (let i = 0; i < NP; i++) { pRing[i] = i % 3; pAng[i] = rnd() * TAU; pY0[i] = gauss() * (.6 + pRing[i] * .3); }
 for (let i = 0; i < NP; i++) {
   const a = rnd() * TAU, r = 30 + rnd() * 90;
   pPos.set([Math.cos(a) * r, gauss() * 30, Math.sin(a) * r - 40], i * 3);
@@ -294,11 +305,7 @@ const bPPos = buffer(pPos, true), bPCol = buffer(pCurCol, true), bPSA = buffer(p
 
 // estado "sin letra": nube orbitando
 function idleTargets() {
-  for (let i = 0; i < NP; i++) {
-    const a = (i / NP) * TAU * 7 + rnd() * .2, r = 35 + (i % 7) * 7 + gauss() * 3;
-    pTgt.set([Math.cos(a) * r, gauss() * 4 + Math.sin(a * 3) * 4, Math.sin(a) * r - 30], i * 3);
-    pTgtCol.set(i % 3 ? [.55, .45, 1] : [.4, .85, 1], i * 3); pUsed[i] = 0;
-  }
+  for (let i = 0; i < NP; i++) pUsed[i] = 0;   // todas pasan a los anillos que bailan
   orbiting = true;
 }
 let orbiting = true;
@@ -341,11 +348,7 @@ function showLine(idx) {
       pTgtCol.set([lerp(base[0], alt[0], m * .45), lerp(base[1], alt[1], m * .45), lerp(base[2], alt[2], m * .45)], i * 3); pUsed[i] = 1;
       // empujón: salen despedidas antes de acomodarse
       pVel[i * 3] += gauss() * 30; pVel[i * 3 + 1] += gauss() * 30; pVel[i * 3 + 2] += gauss() * 30 + 10;
-    } else {
-      const a = rnd() * TAU, r = worldW * .62 + rnd() * 50;
-      pTgt.set([Math.cos(a) * r, Math.sin(a) * r * .55, -40 - rnd() * 80], i * 3);
-      pTgtCol.set([.35, .3, .8], i * 3); pUsed[i] = 0;
-    }
+    } else pUsed[i] = 0;   // las que sobran siguen bailando en los anillos de atrás
   }
   ringT = performance.now() / 1000;
 }
@@ -358,10 +361,94 @@ function onBeat(power) {
   for (let i = 0; i < NP; i += 3) { pVel[i * 3] += gauss() * 6 * power; pVel[i * 3 + 1] += gauss() * 6 * power; pVel[i * 3 + 2] += (rnd() * 8) * power; }
 }
 
+/* ---------- planeta con anillos (de fondo) ---------- */
+const PLANET = program(`attribute vec2 aC; uniform mat4 uV, uP; uniform vec3 uCen, uAX, uAY; varying vec2 vU;
+void main(){ vU = aC; gl_Position = uP * uV * vec4(uCen + uAX * aC.x + uAY * aC.y, 1.); }`,
+`precision mediump float; varying vec2 vU; uniform float uT, uBass, uHigh, uMode, uMel, uHalf;
+void main(){
+  float d = length(vU);
+  vec3 acol = mix(vec3(.45, .55, 1.), vec3(.95, .55, .95), uMel);
+  if (uMode < .5) {                                    // cuerpo del planeta (opaco)
+    vec2 uv = vU * 1.35; float r = length(uv); if (r > 1.) discard;
+    vec3 n = vec3(uv, sqrt(1. - r * r));
+    float lit = max(dot(n, normalize(vec3(.65, .45, .6))), 0.);
+    float bands = sin(uv.y * 13. + sin(uv.x * 2.5 + uT * .08) * 1.3) * .5 + .5;
+    float bands2 = sin(uv.y * 31. + uv.x * 2.) * .5 + .5;
+    vec3 base = mix(vec3(.16, .09, .3), vec3(.5, .32, .7), bands) * (.9 + .2 * bands2);
+    base *= .05 + .95 * lit;
+    base += acol * pow(1. - n.z, 2.5) * (.25 + .5 * uBass) * (.3 + lit);
+    gl_FragColor = vec4(base, 1.);
+  } else if (uMode < 1.5) {                            // atmósfera (suave, late con el bajo)
+    vec2 uv = vU * 1.35; float r = length(uv);
+    float a = exp(-pow((r - 1.) / .12, 2.)) * .45 + smoothstep(1.35, 1., r) * .12;
+    gl_FragColor = vec4(acol * a * (.5 + 1.1 * uBass), 1.);
+  } else {                                             // anillos (uHalf: -1 parte de atrás, 1 parte de adelante)
+    if (vU.y * uHalf < 0.) discard;
+    float rr = d;
+    if (rr < .55 || rr > 1.) discard;
+    float band = .5 + .5 * sin(rr * 90.) * sin(rr * 37. + 1.);
+    float a = smoothstep(.55, .62, rr) * (1. - smoothstep(.93, 1., rr)) * (.25 + .75 * band);
+    vec3 col = mix(vec3(.55, .5, 1.), vec3(.9, .7, 1.), band) * a * (.35 + uHigh * 2.2);
+    gl_FragColor = vec4(col, 1.);
+  }
+}`);
+const PL_POS = [-210, 85, -380], PL_R = 42;
+function drawPlanet(time, RX, UY) {
+  gl.useProgram(PLANET.p); gl.uniformMatrix4fv(PLANET.u.uV, false, VIEW); gl.uniformMatrix4fv(PLANET.u.uP, false, PROJ);
+  gl.uniform1f(PLANET.u.uT, time); gl.uniform1f(PLANET.u.uBass, LV.bass); gl.uniform1f(PLANET.u.uHigh, LV.high); gl.uniform1f(PLANET.u.uMel, clamp(LV.mel, 0, 1));
+  attr(PLANET, "aC", quadBuf, 2);
+  const R = PL_R * 1.35;
+  const ra = [PL_R * 2.4, PL_R * .35, PL_R * .5], rb = [PL_R * -.3, PL_R * .25, PL_R * 2.3];
+  const bx = [RX[0] * R, RX[1] * R, RX[2] * R], by = [UY[0] * R, UY[1] * R, UY[2] * R];
+  gl.uniform3fv(PLANET.u.uCen, PORT ? [-95, 118, -400] : PL_POS);
+  // 1) parte de atrás del anillo  2) planeta opaco  3) atmósfera  4) parte de adelante del anillo
+  gl.uniform1f(PLANET.u.uMode, 2); gl.uniform1f(PLANET.u.uHalf, -1); gl.uniform3fv(PLANET.u.uAX, ra); gl.uniform3fv(PLANET.u.uAY, rb); gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.blendFunc(gl.ONE, gl.ZERO);
+  gl.uniform1f(PLANET.u.uMode, 0); gl.uniform3fv(PLANET.u.uAX, bx); gl.uniform3fv(PLANET.u.uAY, by); gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.uniform1f(PLANET.u.uMode, 1); gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.uniform1f(PLANET.u.uMode, 2); gl.uniform1f(PLANET.u.uHalf, 1); gl.uniform3fv(PLANET.u.uAX, ra); gl.uniform3fv(PLANET.u.uAY, rb); gl.drawArrays(gl.TRIANGLES, 0, 6);
+  off(PLANET);
+}
+
+/* ---------- onda de la canción (osciloscopio) ---------- */
+const NW = 700, wvPos = new Float32Array(NW * 3), wvCol = new Float32Array(NW * 3), wvSA = new Float32Array(NW * 2);
+for (let i = 0; i < NW; i++) { const t = i / (NW - 1); wvCol.set([lerp(.45, 1, t), lerp(.9, .5, t), 1], i * 3); }
+const bWvPos = buffer(wvPos, true), bWvCol = buffer(wvCol), bWvSA = buffer(wvSA, true);
+function drawWave(time) {
+  const widthW = PORT ? 120 : 190, y0 = lerp(-34, PORT ? -36 : -30, instMix), z0 = lerp(-50, -20, instMix);
+  const amp = (5 + LV.rms * 70) * (.7 + .6 * instMix);
+  for (let i = 0; i < NW; i++) {
+    const t = i / (NW - 1), w = WAVE[(t * 600) | 0] || 0, env = Math.sin(t * Math.PI);
+    wvPos[i * 3] = (t - .5) * widthW; wvPos[i * 3 + 1] = y0 + w * amp * env; wvPos[i * 3 + 2] = z0 + Math.sin(t * 6 + time) * 4;
+    wvSA[i * 2] = 1.6; wvSA[i * 2 + 1] = (.5 + Math.abs(w) * 4) * env * (.55 + .45 * instMix) * (audio.paused ? .3 : 1);
+  }
+  upd(bWvPos, wvPos); upd(bWvSA, wvSA); drawPts(bWvPos, bWvCol, bWvSA, NW, 160 * DPR, 6 * DPR);
+}
+
+/* ---------- estrellas fugaces con los golpes agudos ---------- */
+const NSH = 80, shPos = new Float32Array(NSH * 3), shCol = new Float32Array(NSH * 3), shSA = new Float32Array(NSH * 2);
+for (let i = 0; i < NSH; i++) shCol.set(i < 4 ? [1, 1, 1] : [.75, .85, 1], i * 3);
+const bShPos = buffer(shPos, true), bShCol = buffer(shCol), bShSA = buffer(shSA, true);
+let shT = -9, shA = [0, 0, 0], shB = [0, 0, 0];
+function shootingStar() {
+  const side = rnd() < .5 ? -1 : 1, y = 40 + rnd() * 50, z = -140 - rnd() * 80;
+  shA = [-side * (90 + rnd() * 40), y, z]; shB = [side * (90 + rnd() * 60), y - 40 - rnd() * 30, z + 20]; shT = performance.now() / 1000;
+}
+function drawShooting(time) {
+  const k = (time - shT) / 1.1; if (k < 0 || k > 1.25) return;
+  for (let i = 0; i < NSH; i++) {
+    const kk = clamp(k - i * .004, 0, 1);
+    shPos.set([lerp(shA[0], shB[0], kk), lerp(shA[1], shB[1], kk), lerp(shA[2], shB[2], kk)], i * 3);
+    shSA.set([i < 4 ? 3.4 : 2.4 * (1 - i / NSH), 1.6 * (1 - i / NSH) * (1 - smooth(.85, 1.2, k)) * (kk > 0 ? 1 : 0)], i * 2);
+  }
+  upd(bShPos, shPos); upd(bShSA, shSA); drawPts(bShPos, bShCol, bShSA, NSH, 420 * DPR, 18 * DPR);
+}
+
 /* =========================================================
    Cámara + render
    ========================================================= */
-let camA = 0, camY = 0, last = performance.now(), perfSum = 0, perfN = 0, started = false;
+let camA = 0, camY = 0, last = performance.now(), perfSum = 0, perfN = 0, started = false, instMix = 1, spin = 0;
 const ptrs = new Map(); let dragA = 0, dragY = 0, moved = 0;
 glc.addEventListener("pointerdown", e => { ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = 0; poke(); });
 glc.addEventListener("pointermove", e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
@@ -398,7 +485,7 @@ function frame(now) {
 
   // cámara: órbita suave + respiración con la música
   camA += dt * .05;
-  const ang = Math.sin(camA) * .42 + dragA, rad = (PORT ? 100 : 92) - LV.beat * 4;
+  const ang = Math.sin(camA) * .42 + dragA, rad = (PORT ? 100 : 92) - LV.beat * 4 - LV.rms * 14 * instMix + (1 - instMix) * 0;
   const eye = [Math.sin(ang) * rad, Math.sin(camA * .7) * 8 + dragY, Math.cos(ang) * rad];
   if (!ptrs.size) { dragA *= .985; dragY *= .985; }
   perspective(PROJ, FOV, W / H, .5, 3000); lookAt(VIEW, eye, [0, 0, 0]);
@@ -428,22 +515,50 @@ function frame(now) {
   quad([0, 0, -10], sc(RX, 70 + LV.bass * 30), sc(UY, 70 + LV.bass * 30), 0, [.35, .25, .8], .25 + LV.bass * .35);
   for (const r of rings) { const k = time - r.t; if (k > 1.4) continue; const s = 20 + k * 120; quad([0, 0, -15], sc(RX, s), sc(UY, s), 1, [.6, .5, 1], (1 - k / 1.4) * .5 * r.p); }
   off(QUAD);
+  drawPlanet(time, RX, UY);
+  drawWave(time);
+  drawShooting(time);
 
   // partículas de la letra (resortes)
-  const kS = orbiting ? 2.2 : 9, damp = Math.exp(-dt * (orbiting ? 2.5 : 5.5));
+  // anillos ecualizador: grandes y al frente cuando no hay letra, atrás y más suaves cuando se canta
+  instMix += ((orbiting ? 1 : 0) - instMix) * (1 - Math.exp(-dt * 1.6));
+  spin += dt * (.12 + LV.energy * .9 + LV.beat * .6);
+  const tiltX = .55 + Math.sin(time * .4) * .2 + (LV.mel - .5) * .5 * instMix, tiltZ = Math.sin(time * .27 + LV.mel * 2) * .25 * instMix;
+  const cX = Math.cos(tiltX), sX = Math.sin(tiltX), cZ = Math.cos(tiltZ), sZ = Math.sin(tiltZ);
+  const RB = [lerp(52, PORT ? 14 : 22, instMix), lerp(66, PORT ? 24 : 36, instMix), lerp(82, PORT ? 34 : 52, instMix)];
+  const AMP = [lerp(10, 15, instMix), lerp(9, 13, instMix), lerp(8, 11, instMix)];
+  const ZB = lerp(-75, -6, instMix);
+  const BAND = [[1, 14], [14, 90], [90, 300]];
+  const hue = LV.mel;
+  const RC = [[lerp(.4, 1, hue * .6), .5 + hue * .4, 1], [.62 + hue * .3, .45, 1], [1, .45 + (1 - hue) * .3, .85]];
+  const kS = orbiting ? 7 : 9, damp = Math.exp(-dt * 5.5);
   const pulse = 1 + LV.bass * .35 + LV.beat * .25;
-  const rot = orbiting ? dt * .25 : 0, cr = Math.cos(rot), sr = Math.sin(rot);
+  const ck = 1 - Math.exp(-dt * 3);
   for (let i = 0; i < NP; i++) {
     const j = i * 3;
-    if (orbiting) { const x = pTgt[j], z = pTgt[j + 2] + 30; pTgt[j] = x * cr - z * sr; pTgt[j + 2] = x * sr + z * cr - 30; }
+    let tx = pTgt[j], ty = pTgt[j + 1], tz = pTgt[j + 2], s = 0;
+    if (!pUsed[i]) {
+      const r = pRing[i], a = pAng[i] + spin * (r === 1 ? -1 : 1) * (1 + r * .25);
+      const f = Math.abs(((a / TAU) % 1 + 1) % 1 * 2 - 1);                  // espectro espejado alrededor del anillo
+      const b = BAND[r], bin = (b[0] + f * (b[1] - b[0])) | 0;
+      s = SPEC[bin];
+      const rad = RB[r] + s * AMP[r] * (1 + LV.beat * .6) + pY0[i] * .8;
+      const wv = Math.sin(a * (3 + r) + time * (2 + r) + spin * 2) * s * 9 * instMix;      // las partículas "bailan" con la melodía
+      let x = Math.cos(a) * rad, y = pY0[i] * (1 + s * 3) + wv + (s - .15) * 5 * (i % 2 ? 1 : -1), z = Math.sin(a) * rad;
+      let y2 = y * cX - z * sX, z2 = y * sX + z * cX;                          // inclinación 3D
+      const x2 = x * cZ - y2 * sZ; y2 = x * sZ + y2 * cZ;
+      tx = x2; ty = y2 + (instMix < .5 ? 0 : 0); tz = z2 + ZB;
+      const c = RC[r], br = .45 + s * 1.4;
+      pTgtCol[j] = c[0] * br; pTgtCol[j + 1] = c[1] * br; pTgtCol[j + 2] = c[2] * br;
+    }
     const wob = pUsed[i] ? Math.sin(time * 2 + pPh[i]) * .15 * (1 + LV.high * 3) : 0;
-    pVel[j] += (pTgt[j] - pPos[j]) * kS * dt; pVel[j + 1] += (pTgt[j + 1] + wob - pPos[j + 1]) * kS * dt; pVel[j + 2] += (pTgt[j + 2] - pPos[j + 2]) * kS * dt;
+    const k = pUsed[i] ? 9 : kS;
+    pVel[j] += (tx - pPos[j]) * k * dt; pVel[j + 1] += (ty + wob - pPos[j + 1]) * k * dt; pVel[j + 2] += (tz - pPos[j + 2]) * k * dt;
     pVel[j] *= damp; pVel[j + 1] *= damp; pVel[j + 2] *= damp;
     pPos[j] += pVel[j] * dt; pPos[j + 1] += pVel[j + 1] * dt; pPos[j + 2] += pVel[j + 2] * dt;
-    const ck = 1 - Math.exp(-dt * 3);
     pCurCol[j] += (pTgtCol[j] - pCurCol[j]) * ck; pCurCol[j + 1] += (pTgtCol[j + 1] - pCurCol[j + 1]) * ck; pCurCol[j + 2] += (pTgtCol[j + 2] - pCurCol[j + 2]) * ck;
-    pSA[i * 2] = pSz[i] * (pUsed[i] ? pulse : .9);
-    pSA[i * 2 + 1] = pUsed[i] ? .62 + .2 * Math.sin(time * 3 + pPh[i]) + LV.beat * .25 : .3 + LV.mid * .45;
+    pSA[i * 2] = pSz[i] * (pUsed[i] ? pulse : .8 + s * 1.2 + instMix * .3);
+    pSA[i * 2 + 1] = pUsed[i] ? .62 + .2 * Math.sin(time * 3 + pPh[i]) + LV.beat * .25 : (.25 + s * .9) * (.45 + .55 * instMix);
   }
   upd(bPPos, pPos); upd(bPCol, pCurCol); upd(bPSA, pSA);
   drawPts(bPPos, bPCol, bPSA, NP, 140 * DPR, 14 * DPR);
